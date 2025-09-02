@@ -57,6 +57,10 @@ impl Instantiable for Gate {
         None
     }
 
+    fn set_parameter(&mut self, _id: &Identifier, _val: Parameter) -> Option<Parameter> {
+        None
+    }
+
     fn parameters(&self) -> impl Iterator<Item = (Identifier, Parameter)> {
         std::iter::empty()
     }
@@ -457,7 +461,7 @@ where
     /// # Panics
     ///
     /// Panics if the circuit node has multiple outputs.
-    pub fn as_net(&self) -> Ref<Net> {
+    pub fn as_net(&self) -> Ref<'_, Net> {
         Ref::map(self.netref.borrow(), |f| f.as_net())
     }
 
@@ -466,17 +470,17 @@ where
     /// # Panics
     ///
     /// Panics if the circuit node has multiple outputs.
-    pub fn as_net_mut(&self) -> RefMut<Net> {
+    pub fn as_net_mut(&self) -> RefMut<'_, Net> {
         RefMut::map(self.netref.borrow_mut(), |f| f.as_net_mut())
     }
 
     /// Returns a borrow to the output [Net] as position `idx`
-    pub fn get_net(&self, idx: usize) -> Ref<Net> {
+    pub fn get_net(&self, idx: usize) -> Ref<'_, Net> {
         Ref::map(self.netref.borrow(), |f| f.get_net(idx))
     }
 
     /// Returns a mutable borrow to the output [Net] as position `idx`
-    pub fn get_net_mut(&self, idx: usize) -> RefMut<Net> {
+    pub fn get_net_mut(&self, idx: usize) -> RefMut<'_, Net> {
         RefMut::map(self.netref.borrow_mut(), |f| f.get_net_mut(idx))
     }
 
@@ -529,17 +533,17 @@ where
     }
 
     /// Returns a reference to the object at this node.
-    pub fn get_obj(&self) -> Ref<Object<I>> {
+    pub fn get_obj(&self) -> Ref<'_, Object<I>> {
         Ref::map(self.netref.borrow(), |f| f.get())
     }
 
     /// Returns the [Instantiable] type of the instance, if this circuit node is an instance
-    pub fn get_instance_type(&self) -> Option<Ref<I>> {
+    pub fn get_instance_type(&self) -> Option<Ref<'_, I>> {
         Ref::filter_map(self.netref.borrow(), |f| f.get().get_instance_type()).ok()
     }
 
     /// Returns the [Instantiable] type of the instance, if this circuit node is an instance
-    pub fn get_instance_type_mut(&self) -> Option<RefMut<I>> {
+    pub fn get_instance_type_mut(&self) -> Option<RefMut<'_, I>> {
         RefMut::filter_map(self.netref.borrow_mut(), |f| {
             f.get_mut().get_instance_type_mut()
         })
@@ -702,7 +706,7 @@ where
     }
 
     /// Returns an iterator to mutate the output nets of this circuit node.
-    pub fn nets_mut(&self) -> impl Iterator<Item = RefMut<Net>> {
+    pub fn nets_mut(&self) -> impl Iterator<Item = RefMut<'_, Net>> {
         let nnets = self.netref.borrow().get().get_nets().len();
         (0..nnets).map(|i| self.get_net_mut(i))
     }
@@ -727,7 +731,7 @@ where
     }
 
     /// Attempts to find a mutable reference to `net` within this circuit node.
-    pub fn find_net_mut(&self, net: &Net) -> Option<RefMut<Net>> {
+    pub fn find_net_mut(&self, net: &Net) -> Option<RefMut<'_, Net>> {
         RefMut::filter_map(self.netref.borrow_mut(), |f| f.find_net_mut(net)).ok()
     }
 
@@ -838,7 +842,7 @@ where
     }
 
     /// Mutably borrows the requested net from the circuit node
-    pub fn borrow_mut(&self) -> RefMut<Net> {
+    pub fn borrow_mut(&self) -> RefMut<'_, Net> {
         self.from.find_net_mut(&self.ind).unwrap()
     }
 
@@ -848,7 +852,7 @@ where
     }
 
     /// Attempts to borrow the net mutably if the condition `f` is satisfied.
-    pub fn borrow_mut_if(&self, f: impl Fn(&NetRef<I>) -> bool) -> Option<RefMut<Net>> {
+    pub fn borrow_mut_if(&self, f: impl Fn(&NetRef<I>) -> bool) -> Option<RefMut<'_, Net>> {
         if f(&self.from) {
             Some(self.borrow_mut())
         } else {
@@ -864,7 +868,7 @@ where
     I: Instantiable,
 {
     /// The name of the netlist
-    name: String,
+    name: RefCell<String>,
     /// The list of objects in the netlist, such as inputs, modules, and primitives
     objects: RefCell<Vec<NetRefT<I>>>,
     /// The list of operands that point to objects which are outputs
@@ -988,12 +992,12 @@ where
     }
 
     /// Borrow the net being driven
-    pub fn as_net(&self) -> Ref<Net> {
+    pub fn as_net(&self) -> Ref<'_, Net> {
         self.netref.get_net(self.pos)
     }
 
     /// Get a mutable reference to the net being driven
-    pub fn as_net_mut(&self) -> RefMut<Net> {
+    pub fn as_net_mut(&self) -> RefMut<'_, Net> {
         self.netref.get_net_mut(self.pos)
     }
 
@@ -1100,7 +1104,7 @@ where
     /// Creates a new netlist with the given name
     pub fn new(name: String) -> Rc<Self> {
         Rc::new(Self {
-            name,
+            name: RefCell::new(name),
             objects: RefCell::new(Vec::new()),
             outputs: RefCell::new(HashMap::new()),
         })
@@ -1299,10 +1303,10 @@ where
         for oref in objects.iter() {
             let operands = &mut oref.borrow_mut().operands;
             for operand in operands.iter_mut() {
-                if let Some(op) = operand {
-                    if *op == old_index {
-                        *operand = Some(new_index.clone());
-                    }
+                if let Some(op) = operand
+                    && *op == old_index
+                {
+                    *operand = Some(new_index.clone());
                 }
             }
         }
@@ -1325,8 +1329,16 @@ where
     I: Instantiable,
 {
     /// Returns the name of the netlist module
-    pub fn get_name(&self) -> &str {
-        &self.name
+    pub fn get_name(&self) -> Ref<'_, String> {
+        self.name.borrow()
+    }
+
+    /// Sets the name of the netlist module
+    /// # Panics
+    ///
+    /// Panics if the module name cannot be borrowed mutably.
+    pub fn set_name(&self, name: String) {
+        *self.name.borrow_mut() = name;
     }
 
     /// Iterates over the input ports of the netlist.
@@ -1481,10 +1493,10 @@ where
     fn insts_unique(&self) -> bool {
         let mut insts = HashSet::new();
         for inst in self.objects() {
-            if let Some(name) = inst.get_instance_name() {
-                if !insts.insert(name) {
-                    return false;
-                }
+            if let Some(name) = inst.get_instance_name()
+                && !insts.insert(name)
+            {
+                return false;
             }
         }
         true
@@ -1877,7 +1889,7 @@ where
         let objects = self.objects.borrow();
         let outputs = self.outputs.borrow();
 
-        writeln!(f, "module {} (", self.name)?;
+        writeln!(f, "module {} (", self.get_name())?;
 
         // Print inputs and outputs
         let level = 2;
@@ -2171,7 +2183,7 @@ pub mod serde {
     {
         fn from(value: Netlist<I>) -> Self {
             SerdeNetlist {
-                name: value.name,
+                name: value.name.into_inner(),
                 objects: value
                     .objects
                     .into_inner()

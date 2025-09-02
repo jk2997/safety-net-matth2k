@@ -153,7 +153,7 @@ fn test_get_net_from_obj() {
 }
 
 #[test]
-#[should_panic(expected = "already mutably borrowed: BorrowError")]
+#[should_panic(expected = "RefCell already mutably borrowed")]
 fn test_change_gate_incorrect() {
     let netlist = get_simple_example();
     let gate = netlist.last().unwrap();
@@ -402,9 +402,11 @@ fn test_replace_gate() {
 #[test]
 fn test_simple_example() {
     let netlist = get_simple_example();
-    assert_eq!(netlist.get_name(), "example");
+    assert_eq!(netlist.get_name().clone(), "example");
     assert_eq!(netlist.get_input_ports().count(), 2);
     assert_eq!(netlist.get_output_ports().len(), 1);
     let objects: Vec<_> = netlist.objects().collect();
     assert_eq!(objects.len(), 3); // 2 inputs + 1 gate
+    netlist.set_name("new_name".to_string());
+    assert_eq!(netlist.get_name().clone(), "new_name");
 }
