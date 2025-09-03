@@ -4,7 +4,7 @@
 
 */
 
-use bitvec::vec::BitVec;
+use bitvec::{bitvec, field::BitField, order::Lsb0, vec::BitVec};
 use std::collections::{HashMap, HashSet};
 
 use crate::{
@@ -87,6 +87,29 @@ impl std::fmt::Display for Parameter {
     }
 }
 
+impl Parameter {
+    /// Create a new integer parameter
+    pub fn integer(i: u64) -> Self {
+        Self::Integer(i)
+    }
+
+    /// Create a new real parameter
+    pub fn real(r: f32) -> Self {
+        Self::Real(r)
+    }
+
+    /// Create a new bitvec parameter
+    pub fn bitvec(size: usize, val: u64) -> Self {
+        if size > 64 {
+            panic!("BitVec parameter size cannot be larger than 64");
+        }
+        let mut bv: BitVec = bitvec!(usize, Lsb0; 0; 64);
+        bv[0..64].store::<u64>(val);
+        bv.truncate(size);
+        Self::BitVec(bv)
+    }
+}
+
 /// Filter nodes/nets in the netlist by some attribute, like "dont_touch"
 pub struct AttributeFilter<'a, I: Instantiable> {
     // A reference to the underlying netlist
@@ -160,7 +183,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitvec::prelude::*;
 
     #[test]
     fn attribute_iter() {
