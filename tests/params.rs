@@ -4,6 +4,7 @@ use safety_net::{
     attribute::Parameter,
     circuit::{Identifier, Instantiable, Net},
     format_id,
+    logic::Logic,
     netlist::Netlist,
 };
 
@@ -79,6 +80,32 @@ impl Instantiable for Lut {
             Identifier::new("INIT".to_string()),
             Parameter::BitVec(self.lookup_table.clone()),
         ))
+    }
+
+    fn from_constant(val: Logic) -> Option<Self> {
+        match val {
+            Logic::True => Some(Self {
+                lookup_table: BitVec::from_element(1),
+                id: "VDD".into(),
+                inputs: vec![],
+                output: "Y".into(),
+            }),
+            Logic::False => Some(Self {
+                lookup_table: BitVec::from_element(0),
+                id: "GND".into(),
+                inputs: vec![],
+                output: "Y".into(),
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_constant(&self) -> Option<Logic> {
+        match self.id.to_string().as_str() {
+            "VDD" => Some(Logic::True),
+            "GND" => Some(Logic::False),
+            _ => None,
+        }
     }
 }
 

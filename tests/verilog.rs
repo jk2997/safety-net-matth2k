@@ -1,7 +1,8 @@
 use safety_net::{
-    assert_verilog_eq,
+    assert_verilog_eq, logic,
     netlist::{Gate, GateNetlist, Netlist},
 };
+use std::rc::Rc;
 
 fn and_gate() -> Gate {
     Gate::new_logical("AND".into(), vec!["A".into(), "B".into()], "Y".into())
@@ -152,5 +153,51 @@ fn simple_gate_attribute() {
            );
            assign y = inst_0_Y;
          endmodule\n"
+    );
+}
+
+#[test]
+fn constant_output() {
+    let netlist: Rc<GateNetlist> = Netlist::new("top".to_string());
+    let vdd = netlist.insert_constant(logic::Logic::True, "unemitted".into());
+    assert!(vdd.is_ok());
+    let vdd = vdd.unwrap();
+    vdd.expose_with_name("y".into());
+    assert_verilog_eq!(
+        netlist.to_string(),
+        "module top (
+           y
+         );
+           output y;
+           wire y;
+           assign y = 1'b1;
+         endmodule\n"
+    );
+}
+
+#[test]
+fn constant_driver() {
+    let netlist: Rc<GateNetlist> = Netlist::new("top".to_string());
+    let vdd = netlist.insert_constant(logic::Logic::True, "unemitted".into());
+    assert!(vdd.is_ok());
+    let vdd = vdd.unwrap();
+    let not_gate = Gate::new_logical("NOT".into(), vec!["A".into()], "Y".into());
+    let gnd = netlist.insert_gate(not_gate, "inst_0".into(), &[vdd]);
+    assert!(gnd.is_ok());
+    let gnd = gnd.unwrap();
+    gnd.expose_with_name("y".into());
+    assert_verilog_eq!(
+        netlist.to_string(),
+        "module top (
+           y
+         );
+           output y;
+           wire y;
+           wire inst_0_Y;
+           NOT inst_0 (
+             .A(1'b1),
+             .Y(inst_0_Y)
+           );
+           assign y = inst_0_Y;\n"
     );
 }
