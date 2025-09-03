@@ -41,9 +41,9 @@ impl DataType {
 }
 
 /// The type of identifier labelling a circuit node
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum IdentifierType {
+enum IdentifierType {
     /// A normal identifier
     Normal,
     /// An identifier that is part of a wire bus
@@ -74,7 +74,7 @@ impl Identifier {
 
         // Certainly not an exhaustive list.
         // TODO(matth2k): Implement a true isEscaped()
-        let esc_chars = [' ', '\\', '(', ')', ',', '+', '-'];
+        let esc_chars = [' ', '\\', '(', ')', ',', '+', '-', '$', '\'', '~'];
         if name.chars().any(|c| esc_chars.contains(&c)) {
             return Identifier {
                 name,
@@ -131,6 +131,45 @@ impl Identifier {
             IdentifierType::BitSlice(index) => format!("{}[{}]", self.name, index),
             IdentifierType::Escaped => format!("\\{} ", self.name),
         }
+    }
+}
+
+impl std::ops::Add for &Identifier {
+    type Output = Identifier;
+
+    fn add(self, rhs: Self) -> Identifier {
+        let lname = self.name.as_str();
+        let rname = rhs.name.as_str();
+
+        let new_type = match (self.id_type, rhs.id_type) {
+            (IdentifierType::Escaped, _)
+            | (_, IdentifierType::Escaped)
+            | (IdentifierType::BitSlice(_), _)
+            | (_, IdentifierType::BitSlice(_)) => IdentifierType::Escaped,
+            (IdentifierType::Normal, IdentifierType::Normal) => IdentifierType::Normal,
+        };
+
+        let new_name = match (self.id_type, rhs.id_type) {
+            (IdentifierType::BitSlice(l), IdentifierType::BitSlice(r)) => {
+                format!("{}_{}_{}_{}", lname, l, rname, r)
+            }
+            (IdentifierType::BitSlice(l), _) => format!("{}_{}_{}", lname, l, rname),
+            (_, IdentifierType::BitSlice(r)) => format!("{}_{}_{}", lname, rname, r),
+            _ => format!("{}_{}", lname, rname),
+        };
+
+        Identifier {
+            name: new_name,
+            id_type: new_type,
+        }
+    }
+}
+
+impl std::ops::Add for Identifier {
+    type Output = Identifier;
+
+    fn add(self, rhs: Self) -> Identifier {
+        &self + &rhs
     }
 }
 
