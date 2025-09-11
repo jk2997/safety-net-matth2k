@@ -63,6 +63,17 @@ fn get_simple_example() -> Rc<GateNetlist> {
 }
 
 #[test]
+fn test_netref_printing() {
+    let netlist = get_simple_example();
+    let gate = netlist.last().unwrap();
+    let output = format!("{gate:?}");
+    assert_eq!(
+        output,
+        "{ owner: \"example\", index: 2, val: \"AND(inst_0)\" }"
+    );
+}
+
+#[test]
 fn test_io() {
     let netlist = get_simple_example();
     let netlist = netlist.reclaim().unwrap();
