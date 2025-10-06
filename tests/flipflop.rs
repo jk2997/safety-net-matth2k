@@ -3,15 +3,119 @@ use safety_net::{
     netlist::Gate,
     attribute::Parameter,
     circuit::{Identifier, Instantiable, Net},
+    format_id,
     logic::Logic,
     netlist::Netlist,
 };
+use bitvec::vec::BitVec;
+use std::str::FromStr;
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+struct Lut {
+    lookup_table: BitVec,
+    id: Identifier,
+    inputs: Vec<Net>,
+    output: Net,
+}
+
+impl Lut {
+    fn new(k: usize, lookup_table: usize) -> Self {
+        let mut bv: BitVec<usize, _> = BitVec::from_element(lookup_table);
+        bv.truncate(1 << k);
+        Lut {
+            lookup_table: bv,
+            id: format_id!("LUT{k}"),
+            inputs: (0..k).map(|i| Net::new_logic(format_id!("I{i}"))).collect(),
+            output: Net::new_logic("O".into()),
+        }
+    }
+
+    fn invert(&mut self) {
+        self.lookup_table = !self.lookup_table.clone();
+    }
+}
+
+impl Instantiable for Lut {
+    fn get_name(&self) -> &Identifier {
+        &self.id
+    }
+
+    fn get_input_ports(&self) -> impl IntoIterator<Item = &Net> {
+        &self.inputs
+    }
+
+    fn get_output_ports(&self) -> impl IntoIterator<Item = &Net> {
+        std::slice::from_ref(&self.output)
+    }
+
+    fn has_parameter(&self, id: &Identifier) -> bool {
+        *id == Identifier::new("INIT".to_string())
+    }
+
+    fn get_parameter(&self, id: &Identifier) -> Option<Parameter> {
+        if self.has_parameter(id) {
+            Some(Parameter::BitVec(self.lookup_table.clone()))
+        } else {
+            None
+        }
+    }
+
+    fn set_parameter(&mut self, id: &Identifier, val: Parameter) -> Option<Parameter> {
+        if !self.has_parameter(id) {
+            return None;
+        }
+
+        let old = Some(Parameter::BitVec(self.lookup_table.clone()));
+
+        if let Parameter::BitVec(bv) = val {
+            self.lookup_table = bv;
+        } else {
+            panic!("Invalid parameter type for INIT");
+        }
+
+        old
+    }
+
+    fn parameters(&self) -> impl Iterator<Item = (Identifier, Parameter)> {
+        std::iter::once((
+            Identifier::new("INIT".to_string()),
+            Parameter::BitVec(self.lookup_table.clone()),
+        ))
+    }
+
+    fn from_constant(val: Logic) -> Option<Self> {
+        match val {
+            Logic::True => Some(Self {
+                lookup_table: BitVec::from_element(1),
+                id: "VDD".into(),
+                inputs: vec![],
+                output: "Y".into(),
+            }),
+            Logic::False => Some(Self {
+                lookup_table: BitVec::from_element(0),
+                id: "GND".into(),
+                inputs: vec![],
+                output: "Y".into(),
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_constant(&self) -> Option<Logic> {
+        match self.id.to_string().as_str() {
+            "VDD" => Some(Logic::True),
+            "GND" => Some(Logic::False),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 /// A flip-flop in a digital circuit
 struct FlipFlop {
     id: Identifier,
-    init_value: Parameter,
+    init_value: Logic,
     q: Net,
     c: Net,
     ce: Net,
@@ -20,7 +124,7 @@ struct FlipFlop {
 }
 
 impl FlipFlop {
-    fn new(id: Identifier, init_value: u64) -> Self {
+    fn new(id: Identifier, init_value: Logic) -> Self {
         if (id.get_name() != "FDRE") &&
            (id.get_name() != "FDSE") &&
            (id.get_name() != "FDPE") &&
@@ -28,9 +132,6 @@ impl FlipFlop {
         {
             let name : &str = id.get_name();
             panic!("Unsupported flip-flop type: {name}");
-        }
-        if (init_value != 0) && (init_value != 1) {
-            panic!("Invalid initial value for flip-flop: {init_value}");
         }
         let q = Net::new_logic("Q".into());
         let c = Net::new_logic("C".into());
@@ -45,7 +146,7 @@ impl FlipFlop {
         let d = Net::new_logic("D".into());
         FlipFlop {
             id,
-            init_value: Parameter::Integer(init_value),
+            init_value,
             q,
             c,
             ce,
@@ -74,7 +175,7 @@ impl Instantiable for FlipFlop {
 
     fn get_parameter(&self, id: &Identifier) -> Option<Parameter> {
         if self.has_parameter(id) {
-            Some(self.init_value.clone())
+            Some(Parameter::Logic(self.init_value.clone()))
         } else {
             None
         }
@@ -85,14 +186,10 @@ impl Instantiable for FlipFlop {
             return None;
         }
 
-        let old = self.get_parameter(id);
+        let old = Some(Parameter::Logic(self.init_value.clone()));
   
-        if let Parameter::Integer(i) = val {
-            if i > 1 {
-                panic!("Invalid value for INIT parameter: {val}");
-            } else {
-                self.init_value = Parameter::Integer(i);
-            }
+        if let Parameter::Logic(l) = val {
+            self.init_value = l;
         } else {
             panic!("Invalid type for INIT parameter: {val}");
         }
@@ -103,18 +200,99 @@ impl Instantiable for FlipFlop {
     fn parameters(&self) -> impl Iterator<Item = (Identifier, Parameter)> {
         std::iter::once((
             Identifier::new("INIT".to_string()),
-            self.init_value.clone(),
+            Parameter::Logic(self.init_value.clone()),
         ))
     }
 
-    fn from_constant(val: Logic) -> Option<Self> {
+    fn from_constant(_val: Logic) -> Option<Self> {
         None
     }
 
     fn get_constant(&self) -> Option<Logic> {
         None
     }
-}   
+}
+
+#[derive(Debug, Clone)]
+enum Cell {
+    Lut(Lut),
+    FlipFlop(FlipFlop),
+    Gate(Gate),
+}
+
+impl Instantiable for Cell {
+    fn get_name(&self) -> &Identifier {
+        match self {
+            Cell::Lut(lut) => lut.get_name(),
+            Cell::FlipFlop(ff) => ff.get_name(),
+            Cell::Gate(gate) => gate.get_name(),
+        }
+    }
+
+    fn get_input_ports(&self) -> impl IntoIterator<Item = &Net> {
+        match self {
+            Cell::Lut(lut) => lut.get_input_ports().into_iter().collect::<Vec<_>>(),
+            Cell::FlipFlop(ff) => ff.get_input_ports().into_iter().collect::<Vec<_>>(),
+            Cell::Gate(gate) => gate.get_input_ports().into_iter().collect::<Vec<_>>(),
+        }
+    }
+
+    fn get_output_ports(&self) -> impl IntoIterator<Item = &Net> {
+        match self {
+            Cell::Lut(lut) => lut.get_output_ports().into_iter().collect::<Vec<_>>(),
+            Cell::FlipFlop(ff) => ff.get_output_ports().into_iter().collect::<Vec<_>>(),
+            Cell::Gate(gate) => gate.get_output_ports().into_iter().collect::<Vec<_>>(),
+        }
+    }
+
+    fn has_parameter(&self, id: &Identifier) -> bool {
+        match self {
+            Cell::Lut(lut) => lut.has_parameter(id),
+            Cell::FlipFlop(ff) => ff.has_parameter(id),
+            Cell::Gate(gate) => gate.has_parameter(id),
+        }
+    }
+
+    fn get_parameter(&self, id: &Identifier) -> Option<Parameter> {
+        match self {
+            Cell::Lut(lut) => lut.get_parameter(id),
+            Cell::FlipFlop(ff) => ff.get_parameter(id),
+            Cell::Gate(gate) => gate.get_parameter(id),
+        }
+    }
+
+    fn set_parameter(&mut self, id: &Identifier, val: Parameter) -> Option<Parameter> {
+        match self {
+            Cell::Lut(lut) => lut.set_parameter(id, val),
+            Cell::FlipFlop(ff) => ff.set_parameter(id, val),
+            Cell::Gate(gate) => gate.set_parameter(id, val),
+        }
+    }
+
+    fn parameters(&self) -> impl Iterator<Item = (Identifier, Parameter)> {
+        match self {
+            Cell::Lut(lut) => lut.parameters().collect::<Vec<_>>().into_iter(),
+            Cell::FlipFlop(ff) => ff.parameters().collect::<Vec<_>>().into_iter(),
+            Cell::Gate(gate) => gate.parameters().collect::<Vec<_>>().into_iter(),
+        }
+    }
+
+    fn from_constant(val: Logic) -> Option<Self> {
+        if (val == Logic::True) || (val == Logic::False) {
+            return Lut::from_constant(val).map(Cell::Lut);
+        } else {
+            return None;
+        }       
+    }
+
+    fn get_constant(&self) -> Option<Logic> {
+        match self {
+            Cell::Lut(lut) => lut.get_constant(),
+            Cell::FlipFlop(ff) => ff.get_constant(),
+            Cell::Gate(gate) => gate.get_constant(),
+        }
+    }
+}
 
 #[test]
 fn flipflop_test() {
@@ -124,13 +302,18 @@ fn flipflop_test() {
     let ce = netlist.insert_input("ce".into());        
     let rst = netlist.insert_input("rst".into());
     let d = netlist.insert_input("d".into());
+
+    let mut flipflop = FlipFlop::new("FDRE".into(), Logic::from_str("1'bx").unwrap());
+    flipflop.set_parameter(&"INIT".into(), Parameter::Logic(Logic::from_str("1'b0").unwrap()));
+    assert_eq!(flipflop.get_parameter(&"INIT".into()), Some(Parameter::Logic(Logic::from_str("1'b0").unwrap())));
         
     let instance = netlist
-        .insert_gate(FlipFlop::new("FDRE".into(), 0), 
+        .insert_gate(Cell::FlipFlop(flipflop), 
                     "ff1".into(), &[clk, ce, rst, d])
         .unwrap();
-
+    
     instance.expose_with_name("q".into());
+    assert!(netlist.verify().is_ok());
 }
 
 fn nand_gate() -> Gate {
@@ -139,10 +322,6 @@ fn nand_gate() -> Gate {
 
 fn not_gate() -> Gate {
     Gate::new_logical("NOT".into(), vec!["A".into()], "Y".into())
-}
-
-fn buf_gate() -> Gate {
-    Gate::new_logical("BUF".into(), vec!["A".into()], "Y".into())
 }
 
 #[test]
