@@ -1366,8 +1366,8 @@ where
     /// Inputs/constants are fine. Panics on multi-output nodes.
      pub fn replace_net_uses_driven(&self, of: DrivenNet<I>, with: &DrivenNet<I>) -> Result<Object<I>, Error> {
         // Convert the borrowed DrivenNet to a NetRef without consuming it
-        let with_nr = with.clone().unwrap();
-        self.replace_net_uses(of.unwrap(), &with_nr)
+        let with_nr = with.clone();
+        self.replace_net_uses(of, &with_nr)
     }
 
     /// Replaces the uses of a circuit node with another circuit node. The [Object] stored at `of` is returned.
