@@ -7,8 +7,9 @@ use safety_net::{
     logic::Logic,
     netlist::Netlist,
 };
+#[cfg(feature = "derive")]
+use safety_net::derive::Instantiable;
 use bitvec::vec::BitVec;
-pub use inst_derive::Instantiable;
 use std::str::FromStr;
 
 #[derive(Debug, Clone)]
@@ -222,9 +223,80 @@ enum Cell {
     Gate(Gate),
 }
 
+#[test]
+fn cell_test() {
+    let lut = Lut::new(4, 0xAAAA);
+    let ff = FlipFlop::new("FDRE".into(), Logic::from_str("1'b0").unwrap());
+    let gate = Gate::new_logical("AND".into(), vec!["A".into(), "B".into()], "Y".into());
+    let mut cell_lut = Cell::Lut(lut.clone());
+    let mut cell_ff = Cell::FlipFlop(ff.clone());
+    let cell_gate = Cell::Gate(gate.clone());
+
+    // get_name tests
+    assert_eq!(lut.get_name(), cell_lut.get_name());
+    assert_eq!(ff.get_name(), cell_ff.get_name());
+    assert_eq!(gate.get_name(), cell_gate.get_name());
+
+    // get_input_ports and get_output_ports tests
+    let cell_lut_inputs: Vec<_> = cell_lut.get_input_ports().into_iter().collect();
+    let lut_inputs: Vec<_> = lut.get_input_ports().into_iter().collect();
+    assert_eq!(cell_lut_inputs, lut_inputs);
+    let cell_lut_outputs: Vec<_> = cell_lut.get_output_ports().into_iter().collect();
+    let lut_outputs: Vec<_> = lut.get_output_ports().into_iter().collect();
+    assert_eq!(cell_lut_outputs, lut_outputs);
+    let cell_ff_inputs: Vec<_> = cell_ff.get_input_ports().into_iter().collect();
+    let ff_inputs: Vec<_> = ff.get_input_ports().into_iter().collect();
+    assert_eq!(cell_ff_inputs, ff_inputs);
+    let cell_ff_outputs: Vec<_> = cell_ff.get_output_ports().into_iter().collect();
+    let ff_outputs: Vec<_> = ff.get_output_ports().into_iter().collect();
+    assert_eq!(cell_ff_outputs, ff_outputs);
+    let cell_gate_inputs: Vec<_> = cell_gate.get_input_ports().into_iter().collect();
+    let gate_inputs: Vec<_> = gate.get_input_ports().into_iter().collect();
+    assert_eq!(cell_gate_inputs, gate_inputs);
+    let cell_gate_outputs: Vec<_> = cell_gate.get_output_ports().into_iter().collect();
+    let gate_outputs: Vec<_> = gate.get_output_ports().into_iter().collect();
+    assert_eq!(cell_gate_outputs, gate_outputs);
+
+    // get_parameter and set_parameter tests
+    let new_bv: BitVec<usize, _> = BitVec::from_element(0x5555);
+    let old_lut_param = cell_lut.set_parameter(&"INIT".into(), Parameter::BitVec(new_bv.clone()));
+    if let Some(Parameter::BitVec(bv)) = old_lut_param {
+        for i in 0..15 {
+            assert_eq!(bv[i], (i % 2 == 1));
+        }
+    } else {
+        panic!("Expected BitVec parameter");
+    }
+    let lut_param = cell_lut.get_parameter(&"INIT".into());
+    if let Some(Parameter::BitVec(bv)) = lut_param {
+        for i in 0..15 {
+            assert_eq!(bv[i], (i % 2 == 0));
+        }
+    } else {
+        panic!("Expected BitVec parameter");
+    }
+    let old_ff_param = cell_ff.set_parameter(&"INIT".into(), Parameter::Logic(Logic::from_str("1'b1").unwrap()));
+    assert_eq!(old_ff_param, Some(Parameter::Logic(Logic::from_str("1'b0").unwrap())));
+    let ff_param = cell_ff.get_parameter(&"INIT".into());
+    assert_eq!(ff_param, Some(Parameter::Logic(Logic::from_str("1'b1").unwrap())));
+
+    // parameters tests
+    let lut_params: Vec<_> = cell_lut.parameters().collect();
+    assert_eq!(lut_params[0].0, Identifier::new("INIT".to_string()));
+    let ff_params: Vec<_> = cell_ff.parameters().collect();
+    assert_eq!(ff_params[0].0, Identifier::new("INIT".to_string()));
+
+    // from_constant and get_constant tests
+    let vdd = Cell::from_constant(Logic::True).unwrap();
+    assert_eq!(vdd.get_constant(), Some(Logic::True));
+    let gnd = Cell::from_constant(Logic::False).unwrap();
+    assert_eq!(gnd.get_constant(), Some(Logic::False));
+    assert!(cell_ff.get_constant().is_none());
+    assert!(cell_gate.get_constant().is_none());
+}
 
 #[test]
-fn flipflop_test() {
+fn insert_cell_test() {
     let netlist = Netlist::new("test_netlist".to_string());
   
     let clk = netlist.insert_input("clk".into());
@@ -232,10 +304,8 @@ fn flipflop_test() {
     let rst = netlist.insert_input("rst".into());
     let d = netlist.insert_input("d".into());
 
-    let mut flipflop = FlipFlop::new("FDRE".into(), Logic::from_str("1'bx").unwrap());
-    flipflop.set_parameter(&"INIT".into(), Parameter::Logic(Logic::from_str("1'b0").unwrap()));
-    assert_eq!(flipflop.get_parameter(&"INIT".into()), Some(Parameter::Logic(Logic::from_str("1'b0").unwrap())));
-        
+    let flipflop = FlipFlop::new("FDRE".into(), Logic::from_str("1'bx").unwrap());
+
     let instance = netlist
         .insert_gate(Cell::FlipFlop(flipflop), 
                     "ff1".into(), &[clk, ce, rst, d])

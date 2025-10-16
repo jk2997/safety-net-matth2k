@@ -1,4 +1,5 @@
 use proc_macro::TokenStream;
+use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields};
 
@@ -12,7 +13,7 @@ use syn::{Data, DeriveInput, Fields};
 ///
 /// # Example
 ///
-/// ```rust
+///
 /// #[derive(Debug, Clone, Instantiable)]
 /// enum Cell {
 ///     #[instantiable(constant)]
@@ -20,9 +21,8 @@ use syn::{Data, DeriveInput, Fields};
 ///     FlipFlop(FlipFlop),
 ///     Gate(Gate),
 /// }
-/// ```
-
-fn impl_instantiable_trait(ast: DeriveInput) -> TokenStream {
+///
+fn impl_instantiable_trait(ast: DeriveInput) -> TokenStream2 {
     let ident = ast.ident;
 
     // Only support enums
@@ -145,7 +145,7 @@ fn impl_instantiable_trait(ast: DeriveInput) -> TokenStream {
     };
 
     // Generate the implementation
-    let expanded = quote! {
+    quote! {
         impl Instantiable for #ident {
             fn get_name(&self) -> &Identifier {
                 match self {
@@ -197,14 +197,223 @@ fn impl_instantiable_trait(ast: DeriveInput) -> TokenStream {
                 }
             }
         }
-    };
-
-    TokenStream::from(expanded)    
+    }  
             
 }
 
 #[proc_macro_derive(Instantiable, attributes(instantiable))]
 pub fn inst_derive_macro(item: TokenStream) -> TokenStream {
     let ast = syn::parse(item).unwrap();
-    impl_instantiable_trait(ast)
+    TokenStream::from(impl_instantiable_trait(ast))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    /// Helper function to normalize TokenStreams for comparison
+    /// This removes whitespace differences and formats consistently
+    fn normalize_tokenstream(ts: TokenStream2) -> String {
+        // Parse and re-format to normalize
+        syn::parse2::<syn::File>(ts.clone())
+            .map(|file| prettyplease::unparse(&file))
+            .unwrap_or_else(|_| {
+                // If it's not a complete file, try as an item
+                syn::parse2::<syn::Item>(ts.clone())
+                    .map(|item| quote!(#item).to_string())
+                    .unwrap_or_else(|_| ts.to_string())
+            })
+    }
+
+    /// Compare two TokenStreams, ignoring whitespace differences
+    fn assert_tokens_eq(actual: TokenStream2, expected: TokenStream2) {
+        let actual_normalized = normalize_tokenstream(actual.clone());
+        let expected_normalized = normalize_tokenstream(expected.clone());
+            
+        if actual_normalized != expected_normalized {
+            eprintln!("=== ACTUAL ===");
+            eprintln!("{}", actual_normalized);
+            eprintln!("\n=== EXPECTED ===");
+            eprintln!("{}", expected_normalized);
+            eprintln!("\n=== DIFFERENCE ===");
+                
+            // Show a simple diff
+            let actual_lines: Vec<&str> = actual_normalized.lines().collect();
+            let expected_lines: Vec<&str> = expected_normalized.lines().collect();
+                
+            for (i, (a, e)) in actual_lines.iter().zip(expected_lines.iter()).enumerate() {
+                if a != e {
+                    eprintln!("Line {}: ", i + 1);
+                    eprintln!("  Actual:   {}", a);
+                    eprintln!("  Expected: {}", e);
+                }
+            }
+                
+            panic!("TokenStreams do not match");
+        }
+    }
+
+    #[test]
+    fn test_simple_enum_tokenstream() {
+        let input: DeriveInput = parse_quote! {
+            #[derive(Instantiable)]
+            enum SimpleCell {
+                Lut(Lut),
+                #[instantiable(constant)]
+                Gate(Gate),
+            }
+        };
+
+        let output = impl_instantiable_trait(input);
+
+        let expected = quote! {
+            impl Instantiable for SimpleCell {
+                fn get_name(&self) -> &Identifier {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.get_name(),
+                        SimpleCell::Gate(inner) => inner.get_name()
+                    }
+                }
+
+                fn get_input_ports(&self) -> impl IntoIterator<Item = &Net> {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.get_input_ports().into_iter().collect::<Vec<_>>(),
+                        SimpleCell::Gate(inner) => inner.get_input_ports().into_iter().collect::<Vec<_>>()
+                    }
+                }
+
+                fn get_output_ports(&self) -> impl IntoIterator<Item = &Net> {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.get_output_ports().into_iter().collect::<Vec<_>>(),
+                        SimpleCell::Gate(inner) => inner.get_output_ports().into_iter().collect::<Vec<_>>()
+                    }
+                }
+
+                fn has_parameter(&self, id: &Identifier) -> bool {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.has_parameter(id),
+                        SimpleCell::Gate(inner) => inner.has_parameter(id)
+                    }
+                }
+
+                fn get_parameter(&self, id: &Identifier) -> Option<Parameter> {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.get_parameter(id),
+                        SimpleCell::Gate(inner) => inner.get_parameter(id)
+                    }
+                }
+
+                fn set_parameter(&mut self, id: &Identifier, val: Parameter) -> Option<Parameter> {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.set_parameter(id, val),
+                        SimpleCell::Gate(inner) => inner.set_parameter(id, val)
+                    }
+                }
+
+                fn parameters(&self) -> impl Iterator<Item = (Identifier, Parameter)> {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.parameters().collect::<Vec<_>>().into_iter(),
+                        SimpleCell::Gate(inner) => inner.parameters().collect::<Vec<_>>().into_iter()
+                    }
+                }
+
+                fn from_constant(val: Logic) -> Option<Self> {
+                    if (val == Logic::True) || (val == Logic::False) {
+                        return Gate::from_constant(val).map(SimpleCell::Gate);
+                    } else {
+                        return None;
+                    }
+                }
+
+                fn get_constant(&self) -> Option<Logic> {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.get_constant(),
+                        SimpleCell::Gate(inner) => inner.get_constant()
+                    }
+                }
+            }
+        };
+
+        assert_tokens_eq(output, expected);
+    }
+
+    #[test]
+    fn test_no_constant_variant_tokenstream() {
+        let input: DeriveInput = parse_quote! {
+            #[derive(Instantiable)]
+            enum SimpleCell {
+                Lut(Lut),
+                Gate(Gate),
+            }
+        };
+
+        let output = impl_instantiable_trait(input);
+
+        let expected = quote! {
+            impl Instantiable for SimpleCell {
+                fn get_name(&self) -> &Identifier {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.get_name(),
+                        SimpleCell::Gate(inner) => inner.get_name()
+                    }
+                }
+
+                fn get_input_ports(&self) -> impl IntoIterator<Item = &Net> {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.get_input_ports().into_iter().collect::<Vec<_>>(),
+                        SimpleCell::Gate(inner) => inner.get_input_ports().into_iter().collect::<Vec<_>>()
+                    }
+                }
+
+                fn get_output_ports(&self) -> impl IntoIterator<Item = &Net> {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.get_output_ports().into_iter().collect::<Vec<_>>(),
+                        SimpleCell::Gate(inner) => inner.get_output_ports().into_iter().collect::<Vec<_>>()
+                    }
+                }
+
+                fn has_parameter(&self, id: &Identifier) -> bool {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.has_parameter(id),
+                        SimpleCell::Gate(inner) => inner.has_parameter(id)
+                    }
+                }
+
+                fn get_parameter(&self, id: &Identifier) -> Option<Parameter> {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.get_parameter(id),
+                        SimpleCell::Gate(inner) => inner.get_parameter(id)
+                    }
+                }
+
+                fn set_parameter(&mut self, id: &Identifier, val: Parameter) -> Option<Parameter> {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.set_parameter(id, val),
+                        SimpleCell::Gate(inner) => inner.set_parameter(id, val)
+                    }
+                }
+
+                fn parameters(&self) -> impl Iterator<Item = (Identifier, Parameter)> {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.parameters().collect::<Vec<_>>().into_iter(),
+                        SimpleCell::Gate(inner) => inner.parameters().collect::<Vec<_>>().into_iter()
+                    }
+                }
+
+                fn from_constant(_val: Logic) -> Option<Self> {
+                    None
+                }
+
+                fn get_constant(&self) -> Option<Logic> {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.get_constant(),
+                        SimpleCell::Gate(inner) => inner.get_constant()
+                    }
+                }
+            }
+        };
+
+        assert_tokens_eq(output, expected);
+    }
 }
