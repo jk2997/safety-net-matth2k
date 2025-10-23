@@ -82,6 +82,10 @@ impl Instantiable for Gate {
             _ => None,
         }
     }
+
+    fn is_seq(&self) -> bool {
+        false
+    }
 }
 
 impl Gate {

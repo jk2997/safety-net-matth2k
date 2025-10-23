@@ -4,7 +4,7 @@ use quote::quote;
 use syn::{Data, DeriveInput, Fields};
 
 /// Derive macro for the Instantiable trait.
-/// 
+///
 /// This macro works with enums where each variant wraps a type that implements Instantiable.
 /// It generates an implementation that delegates all trait methods to the wrapped type.
 ///
@@ -29,12 +29,8 @@ fn impl_instantiable_trait(ast: DeriveInput) -> TokenStream2 {
     let variants = match ast.data {
         Data::Enum(data_enum) => data_enum.variants,
         _ => {
-            return syn::Error::new_spanned(
-                ident,
-                "Instantiable can only be derived for enums",
-            )
-            .to_compile_error()
-            .into();
+            return syn::Error::new_spanned(ident, "Instantiable can only be derived for enums")
+                .to_compile_error();
         }
     };
 
@@ -47,45 +43,43 @@ fn impl_instantiable_trait(ast: DeriveInput) -> TokenStream2 {
 
         // Validate that the variant has exactly one unnamed field
         match variant.fields {
-            Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
-
-            }
+            Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {}
             _ => {
                 return syn::Error::new_spanned(
                     variant,
                     "Each enum variant must have exactly one unnamed field",
                 )
-                .to_compile_error()
-                .into();
+                .to_compile_error();
             }
         }
 
         // Check for #[instantiable(constant)] attribute
         for attr in &variant.attrs {
             if attr.path().is_ident("instantiable") {
-                if let Ok(_) = attr.parse_nested_meta(|meta| {
-                    if meta.path.is_ident("constant") {
-                        if constant_variant.is_some() {
-                            return Err(syn::Error::new_spanned(
-                                attr,
-                                "Only one variant can be marked with #[instantiable(constant)]"
-                            ));
+                if attr
+                    .parse_nested_meta(|meta| {
+                        if meta.path.is_ident("constant") {
+                            if constant_variant.is_some() {
+                                return Err(syn::Error::new_spanned(
+                                    attr,
+                                    "Only one variant can be marked with #[instantiable(constant)]",
+                                ));
+                            }
+                            constant_variant = Some(variant_name.clone());
+                            Ok(())
+                        } else {
+                            Err(meta.error("expected 'constant'"))
                         }
-                        constant_variant = Some(variant_name.clone());
-                        Ok(())
-                    } else {
-                        Err(meta.error("expected 'constant'"))
-                    }
-                }) {
-                
+                    })
+                    .is_ok()
+                {
                 } else {
                     // Error occurred during parsing
                     return syn::Error::new_spanned(
                         attr,
-                        "Failed to parse #[instantiable] attribute"
+                        "Failed to parse #[instantiable] attribute",
                     )
-                    .to_compile_error()
-                    .into();
+                    .to_compile_error();
                 }
             }
         }
@@ -123,7 +117,11 @@ fn impl_instantiable_trait(ast: DeriveInput) -> TokenStream2 {
 
     let get_constant_arms = variant_names.iter().map(|v| {
         quote! { #ident::#v(inner) => inner.get_constant() }
-    });   
+    });
+
+    let is_seq_arms = variant_names.iter().map(|v| {
+        quote! { #ident::#v(inner) => inner.is_seq() }
+    });
 
     // Generate from_constant implementation based on the marked variant
     let from_constant_impl = if let Some(const_var) = constant_variant {
@@ -196,9 +194,14 @@ fn impl_instantiable_trait(ast: DeriveInput) -> TokenStream2 {
                     #(#get_constant_arms),*
                 }
             }
+
+            fn is_seq(&self) -> bool {
+                match self {
+                    #(#is_seq_arms),*
+                }
+            }
         }
-    }  
-            
+    }
 }
 
 #[proc_macro_derive(Instantiable, attributes(instantiable))]
@@ -230,18 +233,18 @@ mod tests {
     fn assert_tokens_eq(actual: TokenStream2, expected: TokenStream2) {
         let actual_normalized = normalize_tokenstream(actual.clone());
         let expected_normalized = normalize_tokenstream(expected.clone());
-            
+
         if actual_normalized != expected_normalized {
             eprintln!("=== ACTUAL ===");
             eprintln!("{}", actual_normalized);
             eprintln!("\n=== EXPECTED ===");
             eprintln!("{}", expected_normalized);
             eprintln!("\n=== DIFFERENCE ===");
-                
+
             // Show a simple diff
             let actual_lines: Vec<&str> = actual_normalized.lines().collect();
             let expected_lines: Vec<&str> = expected_normalized.lines().collect();
-                
+
             for (i, (a, e)) in actual_lines.iter().zip(expected_lines.iter()).enumerate() {
                 if a != e {
                     eprintln!("Line {}: ", i + 1);
@@ -249,7 +252,7 @@ mod tests {
                     eprintln!("  Expected: {}", e);
                 }
             }
-                
+
             panic!("TokenStreams do not match");
         }
     }
@@ -332,6 +335,13 @@ mod tests {
                         SimpleCell::Gate(inner) => inner.get_constant()
                     }
                 }
+
+                fn is_seq(&self) -> bool {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.is_seq(),
+                        SimpleCell::Gate(inner) => inner.is_seq()
+                    }
+                }
             }
         };
 
@@ -409,6 +419,13 @@ mod tests {
                     match self {
                         SimpleCell::Lut(inner) => inner.get_constant(),
                         SimpleCell::Gate(inner) => inner.get_constant()
+                    }
+                }
+
+                fn is_seq(&self) -> bool {
+                    match self {
+                        SimpleCell::Lut(inner) => inner.is_seq(),
+                        SimpleCell::Gate(inner) => inner.is_seq()
                     }
                 }
             }

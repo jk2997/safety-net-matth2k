@@ -1,15 +1,15 @@
+use bitvec::vec::BitVec;
+#[cfg(feature = "derive")]
+use safety_net::derive::Instantiable;
 use safety_net::{
-    netlist::GateNetlist,
-    netlist::Gate,
     attribute::Parameter,
     circuit::{Identifier, Instantiable, Net},
     format_id,
     logic::Logic,
+    netlist::Gate,
+    netlist::GateNetlist,
     netlist::Netlist,
 };
-#[cfg(feature = "derive")]
-use safety_net::derive::Instantiable;
-use bitvec::vec::BitVec;
 use std::str::FromStr;
 
 #[derive(Debug, Clone)]
@@ -111,6 +111,10 @@ impl Instantiable for Lut {
             _ => None,
         }
     }
+
+    fn is_seq(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -127,12 +131,12 @@ struct FlipFlop {
 
 impl FlipFlop {
     fn new(id: Identifier, init_value: Logic) -> Self {
-        if (id.get_name() != "FDRE") &&
-           (id.get_name() != "FDSE") &&
-           (id.get_name() != "FDPE") &&
-           (id.get_name() != "FDCE")
+        if (id.get_name() != "FDRE")
+            && (id.get_name() != "FDSE")
+            && (id.get_name() != "FDPE")
+            && (id.get_name() != "FDCE")
         {
-            let name : &str = id.get_name();
+            let name: &str = id.get_name();
             panic!("Unsupported flip-flop type: {name}");
         }
         let q = Net::new_logic("Q".into());
@@ -143,7 +147,7 @@ impl FlipFlop {
             "FDSE" => "S".into(),
             "FDPE" => "PRE".into(),
             "FDCE" => "CLR".into(),
-            &_ => unreachable!()
+            &_ => unreachable!(),
         });
         let d = Net::new_logic("D".into());
         FlipFlop {
@@ -189,7 +193,7 @@ impl Instantiable for FlipFlop {
         }
 
         let old = Some(Parameter::Logic(self.init_value.clone()));
-  
+
         if let Parameter::Logic(l) = val {
             self.init_value = l;
         } else {
@@ -212,6 +216,10 @@ impl Instantiable for FlipFlop {
 
     fn get_constant(&self) -> Option<Logic> {
         None
+    }
+
+    fn is_seq(&self) -> bool {
+        true
     }
 }
 
@@ -275,10 +283,19 @@ fn cell_test() {
     } else {
         panic!("Expected BitVec parameter");
     }
-    let old_ff_param = cell_ff.set_parameter(&"INIT".into(), Parameter::Logic(Logic::from_str("1'b1").unwrap()));
-    assert_eq!(old_ff_param, Some(Parameter::Logic(Logic::from_str("1'b0").unwrap())));
+    let old_ff_param = cell_ff.set_parameter(
+        &"INIT".into(),
+        Parameter::Logic(Logic::from_str("1'b1").unwrap()),
+    );
+    assert_eq!(
+        old_ff_param,
+        Some(Parameter::Logic(Logic::from_str("1'b0").unwrap()))
+    );
     let ff_param = cell_ff.get_parameter(&"INIT".into());
-    assert_eq!(ff_param, Some(Parameter::Logic(Logic::from_str("1'b1").unwrap())));
+    assert_eq!(
+        ff_param,
+        Some(Parameter::Logic(Logic::from_str("1'b1").unwrap()))
+    );
 
     // parameters tests
     let lut_params: Vec<_> = cell_lut.parameters().collect();
@@ -293,24 +310,28 @@ fn cell_test() {
     assert_eq!(gnd.get_constant(), Some(Logic::False));
     assert!(cell_ff.get_constant().is_none());
     assert!(cell_gate.get_constant().is_none());
+
+    // is_seq tests
+    assert!(!cell_lut.is_seq());
+    assert!(cell_ff.is_seq());
+    assert!(!cell_gate.is_seq());
 }
 
 #[test]
 fn insert_cell_test() {
     let netlist = Netlist::new("test_netlist".to_string());
-  
+
     let clk = netlist.insert_input("clk".into());
-    let ce = netlist.insert_input("ce".into());        
+    let ce = netlist.insert_input("ce".into());
     let rst = netlist.insert_input("rst".into());
     let d = netlist.insert_input("d".into());
 
     let flipflop = FlipFlop::new("FDRE".into(), Logic::from_str("1'bx").unwrap());
 
     let instance = netlist
-        .insert_gate(Cell::FlipFlop(flipflop), 
-                    "ff1".into(), &[clk, ce, rst, d])
+        .insert_gate(Cell::FlipFlop(flipflop), "ff1".into(), &[clk, ce, rst, d])
         .unwrap();
-    
+
     instance.expose_with_name("q".into());
     assert!(netlist.verify().is_ok());
 }
@@ -330,11 +351,14 @@ fn d_flip_flop() {
     let d = netlist.insert_input("d".into());
     let clk = netlist.insert_input("clk".into());
 
-    let inv_1 = netlist.insert_gate(not_gate(), "not1".into(), &[d.clone()])
+    let inv_1 = netlist
+        .insert_gate(not_gate(), "not1".into(), &[d.clone()])
         .unwrap();
-    let nand_1 = netlist.insert_gate(nand_gate(), "nand_1".into(), &[d, clk.clone()])
+    let nand_1 = netlist
+        .insert_gate(nand_gate(), "nand_1".into(), &[d, clk.clone()])
         .expect("Failed to insert gate");
-    let nand_2 = netlist.insert_gate(nand_gate(), "nand_2".into(), &[inv_1.get_output(0), clk])  
+    let nand_2 = netlist
+        .insert_gate(nand_gate(), "nand_2".into(), &[inv_1.get_output(0), clk])
         .expect("Failed to insert gate");
     let nand_3 = netlist.insert_gate_disconnected(nand_gate(), "nand3".into());
     let nand_4 = netlist.insert_gate_disconnected(nand_gate(), "nand4".into());
