@@ -56,30 +56,23 @@ fn impl_instantiable_trait(ast: DeriveInput) -> TokenStream2 {
         // Check for #[instantiable(constant)] attribute
         for attr in &variant.attrs {
             if attr.path().is_ident("instantiable") {
-                if attr
-                    .parse_nested_meta(|meta| {
-                        if meta.path.is_ident("constant") {
-                            if constant_variant.is_some() {
-                                return Err(syn::Error::new_spanned(
-                                    attr,
-                                    "Only one variant can be marked with #[instantiable(constant)]",
-                                ));
-                            }
-                            constant_variant = Some(variant_name.clone());
-                            Ok(())
-                        } else {
-                            Err(meta.error("expected 'constant'"))
+                let result = attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("constant") {
+                        if constant_variant.is_some() {
+                            return Err(syn::Error::new_spanned(
+                                attr,
+                                "Only one variant can be marked with #[instantiable(constant)]",
+                            ));
                         }
-                    })
-                    .is_ok()
-                {
-                } else {
-                    // Error occurred during parsing
-                    return syn::Error::new_spanned(
-                        attr,
-                        "Failed to parse #[instantiable] attribute",
-                    )
-                    .to_compile_error();
+                        constant_variant = Some(variant_name.clone());
+                        Ok(())
+                    } else {
+                        Err(meta.error("expected 'constant'"))
+                    }
+                });
+
+                if let Err(err) = result {
+                    return err.to_compile_error();
                 }
             }
         }
@@ -432,5 +425,29 @@ mod tests {
         };
 
         assert_tokens_eq(output, expected);
+    }
+
+    #[test]
+    fn test_two_constant_variants_error() {
+        let input: DeriveInput = parse_quote! {
+            #[derive(Instantiable)]
+            enum SimpleCell {
+                #[instantiable(constant)]
+                Lut(Lut),
+                #[instantiable(constant)]
+                Gate(Gate),
+            }
+        };
+
+        let output = impl_instantiable_trait(input);
+
+        let expected_error_msg = "Only one variant can be marked with #[instantiable(constant)]";
+
+        let output_str = output.to_string();
+        assert!(
+            output_str.contains(expected_error_msg),
+            "Expected error message not found. Output was:\n{}",
+            output_str
+        );
     }
 }
