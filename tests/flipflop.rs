@@ -33,6 +33,7 @@ impl Lut {
         }
     }
 
+    #[allow(dead_code)]
     fn invert(&mut self) {
         self.lookup_table = !self.lookup_table.clone();
     }
@@ -181,7 +182,7 @@ impl Instantiable for FlipFlop {
 
     fn get_parameter(&self, id: &Identifier) -> Option<Parameter> {
         if self.has_parameter(id) {
-            Some(Parameter::Logic(self.init_value.clone()))
+            Some(Parameter::Logic(self.init_value))
         } else {
             None
         }
@@ -192,7 +193,7 @@ impl Instantiable for FlipFlop {
             return None;
         }
 
-        let old = Some(Parameter::Logic(self.init_value.clone()));
+        let old = Some(Parameter::Logic(self.init_value));
 
         if let Parameter::Logic(l) = val {
             self.init_value = l;
@@ -206,7 +207,7 @@ impl Instantiable for FlipFlop {
     fn parameters(&self) -> impl Iterator<Item = (Identifier, Parameter)> {
         std::iter::once((
             Identifier::new("INIT".to_string()),
-            Parameter::Logic(self.init_value.clone()),
+            Parameter::Logic(self.init_value),
         ))
     }
 
@@ -352,7 +353,7 @@ fn d_flip_flop() {
     let clk = netlist.insert_input("clk".into());
 
     let inv_1 = netlist
-        .insert_gate(not_gate(), "not1".into(), &[d.clone()])
+        .insert_gate(not_gate(), "not1".into(), std::slice::from_ref(&d))
         .unwrap();
     let nand_1 = netlist
         .insert_gate(nand_gate(), "nand_1".into(), &[d, clk.clone()])
