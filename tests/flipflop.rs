@@ -125,7 +125,10 @@ fn flipflop_test() {
     let params: Vec<_> = ff.parameters().collect();
     assert_eq!(params[0].0, Identifier::new("INIT".to_string()));
     assert_eq!(
-        ff.set_parameter(&"INIT".into(), Parameter::Logic(Logic::from_str("1'b1").unwrap())),
+        ff.set_parameter(
+            &"INIT".into(),
+            Parameter::Logic(Logic::from_str("1'b1").unwrap())
+        ),
         Some(Parameter::Logic(Logic::from_str("1'b0").unwrap()))
     );
     assert_eq!(
