@@ -116,11 +116,11 @@ impl Instantiable for Lut {
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 enum FlopVariant {
-    FDRE,
-    FDSE,
-    FDPE,
+    Fdre,
+    Fdse,
+    Fdpe,
     #[allow(dead_code)]
-    FDCE,
+    Fdce,
 }
 
 #[derive(Debug, Clone)]
@@ -142,10 +142,10 @@ impl FlipFlop {
         let c = Net::new_logic("C".into());
         let ce = Net::new_logic("CE".into());
         let reset = Net::new_logic(match variant {
-            FlopVariant::FDRE => "R".into(),
-            FlopVariant::FDSE => "S".into(),
-            FlopVariant::FDPE => "PRE".into(),
-            FlopVariant::FDCE => "CLR".into(),
+            FlopVariant::Fdre => "R".into(),
+            FlopVariant::Fdse => "S".into(),
+            FlopVariant::Fdpe => "PRE".into(),
+            FlopVariant::Fdce => "CLR".into(),
         });
         let d = Net::new_logic("D".into());
         FlipFlop {
@@ -292,9 +292,9 @@ impl Instantiable for Cell {
 
     fn from_constant(val: Logic) -> Option<Self> {
         if (val == Logic::True) || (val == Logic::False) {
-            return Lut::from_constant(val).map(Cell::Lut);
+            Lut::from_constant(val).map(Cell::Lut)
         } else {
-            return None;
+            None
         }
     }
 
@@ -320,7 +320,7 @@ fn cell_test() {
     let lut = Lut::new(4, 0xAAAA);
     let ff = FlipFlop::new(
         "flipflop".into(),
-        FlopVariant::FDSE,
+        FlopVariant::Fdse,
         Logic::from_str("1'b0").unwrap(),
     );
     let gate = Gate::new_logical("AND".into(), vec!["A".into(), "B".into()], "Y".into());
@@ -406,7 +406,7 @@ fn insert_cell_test() {
     let d = netlist.insert_input("d".into());
     let flipflop = FlipFlop::new(
         "flipflop".into(),
-        FlopVariant::FDPE,
+        FlopVariant::Fdpe,
         Logic::from_str("1'bx").unwrap(),
     );
 
@@ -426,11 +426,11 @@ fn insert_cell_test() {
 fn flipflop_test() {
     let mut ff = FlipFlop::new(
         "flipflop".into(),
-        FlopVariant::FDRE,
+        FlopVariant::Fdre,
         Logic::from_str("1'b0").unwrap(),
     );
     assert_eq!(ff.get_name(), &"flipflop".into());
-    assert_eq!(ff.get_variant(), FlopVariant::FDRE);
+    assert_eq!(ff.get_variant(), FlopVariant::Fdre);
     let input_ports: Vec<_> = ff.get_input_ports().into_iter().collect();
     assert_eq!(input_ports[0], &Net::new_logic("C".into()));
     assert_eq!(input_ports[1], &Net::new_logic("CE".into()));
