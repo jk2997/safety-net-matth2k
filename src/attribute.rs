@@ -103,16 +103,42 @@ impl FromStr for Parameter {
                     ))
                 }
             } else if let Some(bitstring) = literal.strip_prefix("h") {
-                Ok(Parameter::bitvec(
-                    bitsize,
-                    u64::from_str_radix(bitstring, 16)
-                        .expect(&format!("bitstring = {}", bitstring)),
-                ))
+                // Caveat: 1'h1 and 1'h0 are always converted to Parameter::Logic instead of Parameter::BitVec
+                if bitsize == 1 {
+                    match bitstring {
+                        "1" => Ok(Parameter::Logic(Logic::True)),
+                        "0" => Ok(Parameter::Logic(Logic::False)),
+                        "x" => Ok(Parameter::Logic(Logic::X)),
+                        "z" => Ok(Parameter::Logic(Logic::Z)),
+                        _ => Err(Error::ParseError(
+                            "Invalid bit value: {bitstring}".to_string(),
+                        )),
+                    }
+                } else {
+                    Ok(Parameter::bitvec(
+                        bitsize,
+                        u64::from_str_radix(bitstring, 16)
+                            .expect(&format!("bitstring = {}", bitstring)),
+                    ))
+                }
             } else if let Some(bitstring) = literal.strip_prefix("d") {
-                Ok(Parameter::bitvec(
-                    bitsize,
-                    bitstring.parse::<u64>().unwrap(),
-                ))
+                // Caveat: 1'd1 and 1'd0 are always converted to Parameter::Logic instead of Parameter::BitVec
+                if bitsize == 1 {
+                    match bitstring {
+                        "1" => Ok(Parameter::Logic(Logic::True)),
+                        "0" => Ok(Parameter::Logic(Logic::False)),
+                        "x" => Ok(Parameter::Logic(Logic::X)),
+                        "z" => Ok(Parameter::Logic(Logic::Z)),
+                        _ => Err(Error::ParseError(
+                            "Invalid bit value: {bitstring}".to_string(),
+                        )),
+                    }
+                } else {
+                    Ok(Parameter::bitvec(
+                        bitsize,
+                        bitstring.parse::<u64>().unwrap(),
+                    ))
+                }
             } else {
                 Err(Error::ParseError(
                     "Expected a literal with specific bitwidth/format".to_string(),
@@ -329,6 +355,22 @@ mod tests {
         let p = Parameter::from_str("1'bx").unwrap();
         assert_eq!(p, Parameter::Logic(Logic::X));
         let p = Parameter::from_str("1'bz").unwrap();
+        assert_eq!(p, Parameter::Logic(Logic::Z));
+        let p = Parameter::from_str("1'h1").unwrap();
+        assert_eq!(p, Parameter::Logic(Logic::True));
+        let p = Parameter::from_str("1'h0").unwrap();
+        assert_eq!(p, Parameter::Logic(Logic::False));
+        let p = Parameter::from_str("1'hx").unwrap();
+        assert_eq!(p, Parameter::Logic(Logic::X));
+        let p = Parameter::from_str("1'hz").unwrap();
+        assert_eq!(p, Parameter::Logic(Logic::Z));
+        let p = Parameter::from_str("1'd1").unwrap();
+        assert_eq!(p, Parameter::Logic(Logic::True));
+        let p = Parameter::from_str("1'd0").unwrap();
+        assert_eq!(p, Parameter::Logic(Logic::False));
+        let p = Parameter::from_str("1'dx").unwrap();
+        assert_eq!(p, Parameter::Logic(Logic::X));
+        let p = Parameter::from_str("1'dz").unwrap();
         assert_eq!(p, Parameter::Logic(Logic::Z));
         assert!(Parameter::from_str("1'ba").is_err());
     }
