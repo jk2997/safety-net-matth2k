@@ -5,6 +5,7 @@
 */
 
 use bitvec::{bitvec, field::BitField, order::Lsb0, vec::BitVec};
+use ordered_float::OrderedFloat;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
@@ -62,14 +63,14 @@ impl std::fmt::Display for Attribute {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// A dedicated type to parameters for instantiables
 pub enum Parameter {
     /// An unsigned integer parameter
     Integer(u64),
     /// A floating-point parameter
-    Real(f32),
+    Real(OrderedFloat<f32>),
     /// A bit vector parameter, like for a truth table
     BitVec(BitVec),
     /// A four-state logic parameter
@@ -119,7 +120,9 @@ impl FromStr for Parameter {
         } else {
             if split.len() == 1 {
                 if split[0].contains(&".") {
-                    Ok(Parameter::Real(split[0].parse::<f32>().unwrap()))
+                    Ok(Parameter::Real(OrderedFloat(
+                        split[0].parse::<f32>().unwrap(),
+                    )))
                 } else {
                     Ok(Parameter::Integer(split[0].parse::<u64>().unwrap()))
                 }
@@ -172,7 +175,7 @@ impl Parameter {
 
     /// Create a new real parameter
     pub fn real(r: f32) -> Self {
-        Self::Real(r)
+        Self::Real(OrderedFloat(r))
     }
 
     /// Create a new bitvec parameter
@@ -334,7 +337,7 @@ mod tests {
         let p = Parameter::from_str("10'd600").unwrap();
         assert_eq!(p, Parameter::bitvec(10, 600));
         let p = Parameter::from_str("1024.5").unwrap();
-        assert_eq!(p, Parameter::Real(1024.5));
+        assert_eq!(p, Parameter::Real(OrderedFloat(1024.5)));
         let p = Parameter::from_str("10000").unwrap();
         assert_eq!(p, Parameter::Integer(10000));
         assert!(Parameter::from_str("1'1'1").is_err());
