@@ -105,7 +105,8 @@ impl FromStr for Parameter {
             } else if let Some(bitstring) = literal.strip_prefix("h") {
                 Ok(Parameter::bitvec(
                     bitsize,
-                    u64::from_str_radix(bitstring, 16).unwrap(),
+                    u64::from_str_radix(bitstring, 16)
+                        .expect(&format!("bitstring = {}", bitstring)),
                 ))
             } else if let Some(bitstring) = literal.strip_prefix("d") {
                 Ok(Parameter::bitvec(
@@ -124,7 +125,11 @@ impl FromStr for Parameter {
                         split[0].parse::<f32>().unwrap(),
                     )))
                 } else {
-                    Ok(Parameter::Integer(split[0].parse::<u64>().unwrap()))
+                    Ok(Parameter::Integer(
+                        split[0]
+                            .parse::<u64>()
+                            .expect(&format!("split = {}", split[0].to_string())),
+                    ))
                 }
             } else {
                 Err(Error::ParseError(
