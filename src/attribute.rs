@@ -6,9 +6,11 @@
 
 use bitvec::{bitvec, field::BitField, order::Lsb0, vec::BitVec};
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 
 use crate::{
     circuit::Instantiable,
+    error::Error,
     logic::Logic,
     netlist::{NetRef, Netlist},
 };
@@ -72,6 +74,62 @@ pub enum Parameter {
     BitVec(BitVec),
     /// A four-state logic parameter
     Logic(Logic),
+}
+
+impl FromStr for Parameter {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let split = s.split("'").collect::<Vec<&str>>();
+        if split.len() == 2 {
+            let literal = split[1];
+            let bitsize = split[0].parse::<u64>().unwrap() as usize;
+            if let Some(bitstring) = literal.strip_prefix("b") {
+                // Caveat: 1'b1 and 1'b0 are always converted to Parameter::Logic instead of Parameter::BitVec
+                if bitstring.len() == 1 {
+                    match bitstring {
+                        "1" => Ok(Parameter::Logic(Logic::True)),
+                        "0" => Ok(Parameter::Logic(Logic::False)),
+                        "x" => Ok(Parameter::Logic(Logic::X)),
+                        "z" => Ok(Parameter::Logic(Logic::Z)),
+                        _ => Err(Error::ParseError(
+                            "Invalid bit value: {bitstring}".to_string(),
+                        )),
+                    }
+                } else {
+                    Ok(Parameter::bitvec(
+                        bitsize,
+                        u64::from_str_radix(bitstring, 2).unwrap(),
+                    ))
+                }
+            } else if let Some(bitstring) = literal.strip_prefix("h") {
+                Ok(Parameter::bitvec(
+                    bitsize,
+                    u64::from_str_radix(bitstring, 16).unwrap(),
+                ))
+            } else if let Some(bitstring) = literal.strip_prefix("d") {
+                Ok(Parameter::bitvec(
+                    bitsize,
+                    bitstring.parse::<u64>().unwrap(),
+                ))
+            } else {
+                Err(Error::ParseError(
+                    "Expected a literal with specific bitwidth/format".to_string(),
+                ))
+            }
+        } else {
+            if split.len() == 1 {
+                if split[0].contains(&".") {
+                    Ok(Parameter::Real(split[0].parse::<f32>().unwrap()))
+                } else {
+                    Ok(Parameter::Integer(split[0].parse::<u64>().unwrap()))
+                }
+            } else {
+                Err(Error::ParseError(
+                    "Invalid format for parameter: {s}".to_string(),
+                ))
+            }
+        }
+    }
 }
 
 impl Eq for Parameter {}
@@ -252,5 +310,33 @@ mod tests {
         assert_eq!(p.to_string(), "8'h17");
         let p = Parameter::BitVec(bitvec![1, 1, 1, 1, 1, 0, 0, 0]);
         assert_eq!(p.to_string(), "8'h1f");
+    }
+
+    #[test]
+    fn test_parameter_fromstr_logic() {
+        let p = Parameter::from_str("1'b1").unwrap();
+        assert_eq!(p, Parameter::Logic(Logic::True));
+        let p = Parameter::from_str("1'b0").unwrap();
+        assert_eq!(p, Parameter::Logic(Logic::False));
+        let p = Parameter::from_str("1'bx").unwrap();
+        assert_eq!(p, Parameter::Logic(Logic::X));
+        let p = Parameter::from_str("1'bz").unwrap();
+        assert_eq!(p, Parameter::Logic(Logic::Z));
+        assert!(Parameter::from_str("1'ba").is_err());
+    }
+
+    #[test]
+    fn test_parameter_fromstr() {
+        let p = Parameter::from_str("5'b10101").unwrap();
+        assert_eq!(p, Parameter::bitvec(5, 21));
+        let p = Parameter::from_str("8'h1A").unwrap();
+        assert_eq!(p, Parameter::bitvec(8, 26));
+        let p = Parameter::from_str("10'd600").unwrap();
+        assert_eq!(p, Parameter::bitvec(10, 600));
+        let p = Parameter::from_str("1024.5").unwrap();
+        assert_eq!(p, Parameter::Real(1024.5));
+        let p = Parameter::from_str("10000").unwrap();
+        assert_eq!(p, Parameter::Integer(10000));
+        assert!(Parameter::from_str("1'1'1").is_err());
     }
 }
