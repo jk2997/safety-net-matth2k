@@ -60,7 +60,7 @@ impl std::fmt::Display for Attribute {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// A dedicated type to parameters for instantiables
 pub enum Parameter {
