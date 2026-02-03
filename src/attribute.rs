@@ -83,7 +83,10 @@ impl FromStr for Parameter {
         let split = s.split("'").collect::<Vec<&str>>();
         if split.len() == 2 {
             let literal = split[1];
-            let bitsize = split[0].parse::<u64>().unwrap() as usize;
+            let bitsize = split[0]
+                .parse::<u64>()
+                .map_err(|_| Error::ParseError(format!("Invalid bitsize: {}", split[0])))?
+                as usize;
             if let Some(bitstring) = literal.strip_prefix("b") {
                 // Caveat: 1'b1 and 1'b0 are always converted to Parameter::Logic instead of Parameter::BitVec
                 if bitstring.len() == 1 {
@@ -92,15 +95,16 @@ impl FromStr for Parameter {
                         "0" => Ok(Parameter::Logic(Logic::False)),
                         "x" => Ok(Parameter::Logic(Logic::X)),
                         "z" => Ok(Parameter::Logic(Logic::Z)),
-                        _ => Err(Error::ParseError(
-                            "Invalid bit value: {bitstring}".to_string(),
-                        )),
+                        _ => Err(Error::ParseError(format!(
+                            "Invalid bit value: {}",
+                            bitstring
+                        ))),
                     }
                 } else {
-                    Ok(Parameter::bitvec(
-                        bitsize,
-                        u64::from_str_radix(bitstring, 2).unwrap(),
-                    ))
+                    let val = u64::from_str_radix(bitstring, 2).map_err(|_| {
+                        Error::ParseError(format!("Invalid binary string: {}", bitstring))
+                    })?;
+                    Ok(Parameter::bitvec(bitsize, val))
                 }
             } else if let Some(bitstring) = literal.strip_prefix("h") {
                 // Caveat: 1'h1 and 1'h0 are always converted to Parameter::Logic instead of Parameter::BitVec
@@ -110,16 +114,16 @@ impl FromStr for Parameter {
                         "0" => Ok(Parameter::Logic(Logic::False)),
                         "x" => Ok(Parameter::Logic(Logic::X)),
                         "z" => Ok(Parameter::Logic(Logic::Z)),
-                        _ => Err(Error::ParseError(
-                            "Invalid bit value: {bitstring}".to_string(),
-                        )),
+                        _ => Err(Error::ParseError(format!(
+                            "Invalid bit value: {}",
+                            bitstring
+                        ))),
                     }
                 } else {
-                    Ok(Parameter::bitvec(
-                        bitsize,
-                        u64::from_str_radix(bitstring, 16)
-                            .expect(&format!("bitstring = {}", bitstring)),
-                    ))
+                    let val = u64::from_str_radix(bitstring, 16).map_err(|_| {
+                        Error::ParseError(format!("Invalid hex string: {}", bitstring))
+                    })?;
+                    Ok(Parameter::bitvec(bitsize, val))
                 }
             } else if let Some(bitstring) = literal.strip_prefix("d") {
                 // Caveat: 1'd1 and 1'd0 are always converted to Parameter::Logic instead of Parameter::BitVec
@@ -129,15 +133,16 @@ impl FromStr for Parameter {
                         "0" => Ok(Parameter::Logic(Logic::False)),
                         "x" => Ok(Parameter::Logic(Logic::X)),
                         "z" => Ok(Parameter::Logic(Logic::Z)),
-                        _ => Err(Error::ParseError(
-                            "Invalid bit value: {bitstring}".to_string(),
-                        )),
+                        _ => Err(Error::ParseError(format!(
+                            "Invalid bit value: {}",
+                            bitstring
+                        ))),
                     }
                 } else {
-                    Ok(Parameter::bitvec(
-                        bitsize,
-                        bitstring.parse::<u64>().unwrap(),
-                    ))
+                    let val = bitstring.parse::<u64>().map_err(|_| {
+                        Error::ParseError(format!("Invalid decimal string: {}", bitstring))
+                    })?;
+                    Ok(Parameter::bitvec(bitsize, val))
                 }
             } else {
                 Err(Error::ParseError(
@@ -147,20 +152,21 @@ impl FromStr for Parameter {
         } else {
             if split.len() == 1 {
                 if split[0].contains(&".") {
-                    Ok(Parameter::Real(OrderedFloat(
-                        split[0].parse::<f32>().unwrap(),
-                    )))
+                    let val = split[0]
+                        .parse::<f32>()
+                        .map_err(|_| Error::ParseError(format!("Invalid float: {}", split[0])))?;
+                    Ok(Parameter::Real(OrderedFloat(val)))
                 } else {
-                    Ok(Parameter::Integer(
-                        split[0]
-                            .parse::<u64>()
-                            .expect(&format!("split = {}", split[0].to_string())),
-                    ))
+                    let val = split[0]
+                        .parse::<u64>()
+                        .map_err(|_| Error::ParseError(format!("Invalid integer: {}", split[0])))?;
+                    Ok(Parameter::Integer(val))
                 }
             } else {
-                Err(Error::ParseError(
-                    "Invalid format for parameter: {s}".to_string(),
-                ))
+                Err(Error::ParseError(format!(
+                    "Invalid format for parameter: {}",
+                    s
+                )))
             }
         }
     }
@@ -372,7 +378,6 @@ mod tests {
         assert_eq!(p, Parameter::Logic(Logic::X));
         let p = Parameter::from_str("1'dz").unwrap();
         assert_eq!(p, Parameter::Logic(Logic::Z));
-        assert!(Parameter::from_str("1'ba").is_err());
     }
 
     #[test]
@@ -387,6 +392,19 @@ mod tests {
         assert_eq!(p, Parameter::Real(OrderedFloat(1024.5)));
         let p = Parameter::from_str("10000").unwrap();
         assert_eq!(p, Parameter::Integer(10000));
+    }
+
+    #[test]
+    fn test_parameter_fromstr_err() {
         assert!(Parameter::from_str("1'1'1").is_err());
+        assert!(Parameter::from_str("1'ba").is_err());
+        assert!(Parameter::from_str("1'ha").is_err());
+        assert!(Parameter::from_str("1'da").is_err());
+        assert!(Parameter::from_str("a'd512").is_err());
+        assert!(Parameter::from_str("4'b2020").is_err());
+        assert!(Parameter::from_str("4'd0F").is_err());
+        assert!(Parameter::from_str("4'hZ").is_err());
+        assert!(Parameter::from_str("1234..44").is_err());
+        assert!(Parameter::from_str("132F3E").is_err());
     }
 }
