@@ -89,7 +89,7 @@ impl FromStr for Parameter {
                 as usize;
             if let Some(bitstring) = literal.strip_prefix("b") {
                 // Caveat: 1'b1 and 1'b0 are always converted to Parameter::Logic instead of Parameter::BitVec
-                if bitstring.len() == 1 {
+                if bitsize == 1 {
                     match bitstring {
                         "1" => Ok(Parameter::Logic(Logic::True)),
                         "0" => Ok(Parameter::Logic(Logic::False)),
