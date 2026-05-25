@@ -2603,7 +2603,7 @@ where
             }
         }
         writeln!(f, ");")?;
-
+        eprintln!("went here 1");
         // Make wire decls
         let mut already_decl = HashSet::new();
         for oref in objects.iter() {
