@@ -1613,6 +1613,8 @@ where
             self.belongs(&of.clone().unwrap());
             self.belongs(&with.clone().unwrap());
         }
+        eprintln!("of = {of}");
+        eprintln!("with = {with}");
         let unwrapped = of.clone().unwrap().unwrap();
         let i = of.get_output_index();
         let k = with.get_output_index();
@@ -1630,13 +1632,13 @@ where
         }
 
         let old_index = of.get_operand();
-
+        /*
         if let Some(nets) = self.outputs.borrow().get(&old_index)
             && nets.contains(&*of.as_net())
         {
             return Err(Error::NonuniqueNets(nets.iter().cloned().collect()));
         }
-
+        */
         let new_index = with.get_operand();
         let objects = self.objects.borrow();
         for oref in objects.iter() {
