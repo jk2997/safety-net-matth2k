@@ -2615,6 +2615,7 @@ where
                 already_decl.insert(net.clone());
             }
         }
+        eprintln!("went here 2");
         for nets in outputs.values() {
             for net in nets {
                 if !already_decl.contains(net) {
@@ -2624,6 +2625,7 @@ where
                 }
             }
         }
+        eprintln!("went here 3");
         for oref in objects.iter() {
             let owned = oref.borrow();
             let obj = owned.get();
@@ -2638,7 +2640,7 @@ where
                 }
             }
         }
-
+        eprintln!("went here 4");
         for oref in objects.iter() {
             let owned = oref.borrow();
             let obj = owned.get();
@@ -2728,7 +2730,7 @@ where
                 writeln!(f, "{indent});")?;
             }
         }
-
+        eprintln!("went here 5");
         for (driver, nets) in outputs.iter() {
             for net in nets {
                 let driver_net = match driver {
